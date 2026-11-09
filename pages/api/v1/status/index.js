@@ -1,9 +1,8 @@
-import database from "../../../../infra/database.js";
+import database from "infra/database.js";
 
-function status(req, res) {
-  const result = database.query("SELECT 1 + 1;");
-  console.log(result);
-  res.status(200).json({ status: "ok" });
+async function status(req, res) {
+  const result = await database.query("SELECT 1 + 1 as soma;");
+  res.status(200).json({ status: "ok", result: result.rows[0].soma });
 }
 
 export default status;
