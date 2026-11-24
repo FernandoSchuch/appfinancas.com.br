@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 const TITULOS_IGNORADOS = ["pagamento recebido"];
 
@@ -49,6 +50,7 @@ function lerCsv(texto) {
       linhas: [],
       erros: ["Cabeçalho esperado: date,title,amount"],
       ignoradas: [],
+      mes: "",
     };
   }
 
@@ -72,13 +74,70 @@ function lerCsv(texto) {
       erros.push(`Linha ${n}: data inválida`);
     else if (!descricao) erros.push(`Linha ${n}: título vazio`);
     else if (!Number.isFinite(valor)) erros.push(`Linha ${n}: valor inválido`);
-    else linhas.push({ data, descricao, valor, origem: "", responsavel: "" });
+    else
+      linhas.push({
+        data,
+        descricao,
+        valor,
+        origem: "",
+        responsavel: "",
+        previsao: null,
+      });
   }
 
   if (erros.length === 0 && linhas.length === 0) {
     erros.push("Arquivo sem transações");
   }
-  return { linhas, erros, ignoradas };
+
+  const meses = [...new Set(linhas.map((l) => l.data.slice(0, 7)))].sort();
+  if (meses.length > 1) {
+    erros.push(
+      `O arquivo tem movimentos de meses diferentes (${meses.join(", ")})`,
+    );
+  }
+
+  return { linhas, erros, ignoradas, mes: meses.length === 1 ? meses[0] : "" };
+}
+
+// Pareia cada linha do arquivo com um movimento já gravado (mesma data,
+// descrição e valor), na ordem, e copia origem e responsável do banco.
+function aplicarExistentes(linhas, existentes) {
+  const chaveDe = (data, descricao, valor) =>
+    `${data}|${descricao}|${Math.abs(valor).toFixed(2)}`;
+
+  const mapa = new Map();
+  for (const e of existentes) {
+    const chave = chaveDe(e.data, e.descricao, e.valor);
+    if (!mapa.has(chave)) mapa.set(chave, []);
+    mapa.get(chave).push(e);
+  }
+
+  return linhas.map((l) => {
+    const lista = mapa.get(chaveDe(l.data, l.descricao, l.valor));
+    if (!lista || lista.length === 0) return l;
+    const e = lista.shift();
+    return {
+      ...l,
+      origem: String(e.origem),
+      responsavel: String(e.responsavel),
+    };
+  });
+}
+
+// Um nome combina com o outro quando um contém o outro, sem diferenciar
+// maiúsculas. O nome mais curto precisa ter pelo menos 3 caracteres.
+function nomesCombinam(a, b) {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (Math.min(x.length, y.length) < 3) return false;
+  return x.includes(y) || y.includes(x);
+}
+
+async function consultar(url) {
+  const resposta = await fetch(url);
+  const dados = await resposta.json();
+  if (!resposta.ok) throw new Error(dados.error || "Erro ao consultar dados");
+  return dados;
 }
 
 const moeda = (v) =>
@@ -86,6 +145,10 @@ const moeda = (v) =>
 
 const tipoDe = (valor, negativoCredito) =>
   valor < 0 === negativoCredito ? "C" : "D";
+
+const rotuloTipo = (tipo) => (tipo === "C" ? "Crédito" : "Débito");
+
+const formatarMes = (mes) => `${mes.slice(5)}/${mes.slice(0, 4)}`;
 
 export default function Importar() {
   const [listas, setListas] = useState({
@@ -95,6 +158,10 @@ export default function Importar() {
   });
   const [conta, setConta] = useState("");
   const [linhas, setLinhas] = useState([]);
+  const [previsoes, setPrevisoes] = useState([]);
+  const [dialogo, setDialogo] = useState(null);
+  const [mes, setMes] = useState("");
+  const [existentesTotal, setExistentesTotal] = useState(0);
   const [erros, setErros] = useState([]);
   const [ignoradas, setIgnoradas] = useState([]);
   const [mensagem, setMensagem] = useState(null);
@@ -109,16 +176,55 @@ export default function Importar() {
       );
   }, []);
 
+  function limparImportacao() {
+    setLinhas([]);
+    setPrevisoes([]);
+    setDialogo(null);
+    setMes("");
+    setExistentesTotal(0);
+    setErros([]);
+    setIgnoradas([]);
+  }
+
+  // Trocar a conta limpa a tabela: as sugestões, as previsões e o mês a ser
+  // regravado pertencem à conta escolhida antes de carregar o arquivo.
+  function trocarConta(valor) {
+    setConta(valor);
+    setMensagem(null);
+    limparImportacao();
+  }
+
   async function aoEscolherArquivo(event) {
     const arquivo = event.target.files[0];
     event.target.value = "";
     if (!arquivo) return;
 
     setMensagem(null);
+    limparImportacao();
+
     const resultado = lerCsv(await arquivo.text());
     setErros(resultado.erros);
     setIgnoradas(resultado.ignoradas);
-    setLinhas(resultado.erros.length === 0 ? resultado.linhas : []);
+    if (resultado.erros.length > 0) return;
+
+    try {
+      const [dadosExistentes, listaPrevisoes] = await Promise.all([
+        consultar(
+          `/api/v1/movimentos/existentes?conta=${conta}&mes=${resultado.mes}`,
+        ),
+        consultar(
+          `/api/v1/lancamentos?conta=${conta}&mes=${resultado.mes}&natureza=P`,
+        ),
+      ]);
+      setLinhas(
+        aplicarExistentes(resultado.linhas, dadosExistentes.movimentos),
+      );
+      setExistentesTotal(dadosExistentes.movimentos.length);
+      setPrevisoes(listaPrevisoes);
+      setMes(resultado.mes);
+    } catch (erro) {
+      setMensagem({ tipo: "erro", texto: erro.message });
+    }
   }
 
   function alterarLinha(indice, campo, valor) {
@@ -171,9 +277,46 @@ export default function Importar() {
     }, 0);
   }
 
-  const tudoClassificado =
-    linhas.length > 0 &&
-    linhas.every((l) => l.origem !== "" && l.responsavel !== "");
+  // previsões já escolhidas por alguma linha não são oferecidas às outras
+  const usadas = new Set(
+    linhas.map((l) => l.previsao).filter((id) => id !== null),
+  );
+  const candidatasDe = (linha) =>
+    previsoes.filter(
+      (p) => !usadas.has(p.id) && nomesCombinam(linha.descricao, p.descricao),
+    );
+
+  function substituir(indice, previsao) {
+    setLinhas((atuais) =>
+      atuais.map((l, i) =>
+        i === indice
+          ? {
+              ...l,
+              previsao: previsao.id,
+              origem: l.origem === "" ? String(previsao.origem) : l.origem,
+              responsavel:
+                l.responsavel === ""
+                  ? String(previsao.responsavel)
+                  : l.responsavel,
+            }
+          : l,
+      ),
+    );
+    setDialogo(null);
+  }
+
+  function desfazerSubstituicao(indice) {
+    const ok = window.confirm(
+      "Desfazer a substituição? A previsão voltará a ficar disponível e não será apagada.\n(A origem e o responsável já preenchidos continuam como estão.)",
+    );
+    if (!ok) return;
+    setLinhas((atuais) =>
+      atuais.map((l, i) => (i === indice ? { ...l, previsao: null } : l)),
+    );
+  }
+
+  const classificada = (l) => l.origem !== "" && l.responsavel !== "";
+  const tudoClassificado = linhas.length > 0 && linhas.every(classificada);
 
   const contaSelecionada = listas.contas.find((c) => String(c.id) === conta);
   const negativoCredito = contaSelecionada
@@ -186,7 +329,22 @@ export default function Importar() {
   const totalDebitos = somar("D");
   const totalCreditos = somar("C");
 
+  const comAlerta = linhas.filter(
+    (l) => l.previsao === null && candidatasDe(l).length > 0,
+  ).length;
+  const substituidas = linhas.filter((l) => l.previsao !== null).length;
+
+  const nomeDe = (lista, id) => lista.find((i) => i.id === id)?.descricao ?? id;
+  const linhaDialogo = dialogo !== null ? linhas[dialogo] : null;
+
   async function aplicar() {
+    if (existentesTotal > 0) {
+      const ok = window.confirm(
+        `Este mês (${formatarMes(mes)}) já tem ${existentesTotal} movimentos nessa conta.\nEles serão apagados e substituídos por ${linhas.length}.\nContinuar?`,
+      );
+      if (!ok) return;
+    }
+
     setEnviando(true);
     setMensagem(null);
     try {
@@ -201,17 +359,26 @@ export default function Importar() {
             valor: l.valor,
             origem: Number(l.origem),
             responsavel: Number(l.responsavel),
+            previsao: l.previsao,
           })),
         }),
       });
       const dados = await resposta.json();
       if (!resposta.ok)
         throw new Error(dados.error || "Erro ao gravar movimentos");
-      setLinhas([]);
-      setIgnoradas([]);
+      limparImportacao();
+
+      const extras = [];
+      if (dados.apagados > 0) {
+        extras.push(`${dados.apagados} anteriores do mês foram substituídos`);
+      }
+      if (dados.previsoes > 0) {
+        extras.push(`${dados.previsoes} previsões concretizadas`);
+      }
+      const extra = extras.length > 0 ? ` (${extras.join("; ")})` : "";
       setMensagem({
         tipo: "ok",
-        texto: `${dados.inseridos} movimentos importados`,
+        texto: `${dados.inseridos} movimentos importados${extra}`,
       });
     } catch (erro) {
       setMensagem({ tipo: "erro", texto: erro.message });
@@ -222,6 +389,9 @@ export default function Importar() {
 
   return (
     <main style={{ padding: 24, fontFamily: "sans-serif" }}>
+      <p>
+        <Link href="/">← Voltar ao menu</Link>
+      </p>
       <h1>Importar CSV</h1>
 
       <div
@@ -234,7 +404,7 @@ export default function Importar() {
       >
         <label>
           Conta bancária:{" "}
-          <select value={conta} onChange={(e) => setConta(e.target.value)}>
+          <select value={conta} onChange={(e) => trocarConta(e.target.value)}>
             <option value="">Selecione...</option>
             {listas.contas.map((c) => (
               <option key={c.id} value={c.id}>
@@ -283,9 +453,26 @@ export default function Importar() {
       {linhas.length > 0 && (
         <>
           <p>
-            {linhas.length} transações · Débitos {moeda(totalDebitos)} ·
-            Créditos {moeda(totalCreditos)}
+            Mês: {formatarMes(mes)} · {linhas.length} transações · Débitos{" "}
+            {moeda(totalDebitos)} · Créditos {moeda(totalCreditos)}
           </p>
+
+          {existentesTotal > 0 && (
+            <p style={{ color: "#996600" }}>
+              Já existem {existentesTotal} movimentos dessa conta neste mês. Ao
+              aplicar, eles serão apagados e substituídos pelos desta tabela.
+            </p>
+          )}
+
+          {(comAlerta > 0 || substituidas > 0) && (
+            <p style={{ color: "#996600" }}>
+              {comAlerta > 0 &&
+                `⚠️ ${comAlerta} linhas têm possível previsão correspondente (clique no ícone para decidir). `}
+              {substituidas > 0 &&
+                `✔ ${substituidas} previsões serão substituídas ao aplicar.`}
+            </p>
+          )}
+
           <table cellPadding={6} style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left" }}>
@@ -294,19 +481,43 @@ export default function Importar() {
                 <th>Descrição</th>
                 <th>Tipo</th>
                 <th>Valor</th>
+                <th>Previsão</th>
                 <th>Origem</th>
                 <th>Responsável</th>
               </tr>
             </thead>
             <tbody>
               {linhas.map((l, i) => (
-                <tr key={i} style={{ borderTop: "1px solid #ccc" }}>
+                <tr
+                  key={i}
+                  style={{
+                    borderTop: "1px solid #ccc",
+                    background: classificada(l) ? "#e6f4ea" : "transparent",
+                  }}
+                >
                   <td>{i + 1}</td>
                   <td>{l.data}</td>
                   <td>{l.descricao}</td>
                   <td>{tipoDe(l.valor, negativoCredito)}</td>
                   <td style={{ textAlign: "right" }}>
                     {moeda(Math.abs(l.valor))}
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    {l.previsao !== null ? (
+                      <button
+                        title="Previsão substituída. Clique para desfazer"
+                        onClick={() => desfazerSubstituicao(i)}
+                      >
+                        ✔
+                      </button>
+                    ) : candidatasDe(l).length > 0 ? (
+                      <button
+                        title="Previsão identificada. Clique para ver"
+                        onClick={() => setDialogo(i)}
+                      >
+                        ⚠️
+                      </button>
+                    ) : null}
                   </td>
                   <td>
                     <select
@@ -351,6 +562,83 @@ export default function Importar() {
             {enviando ? "Aplicando..." : "Aplicar movimentos"}
           </button>
         </>
+      )}
+
+      {linhaDialogo && (
+        <div
+          onClick={() => setDialogo(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              color: "#000",
+              padding: 24,
+              borderRadius: 8,
+              maxWidth: 900,
+              maxHeight: "80vh",
+              overflow: "auto",
+            }}
+          >
+            <h3>Previsão identificada</h3>
+            <p>
+              Foi identificada uma previsão que pode ser substituída por este
+              movimento. Confira se ele é o movimento concretizado ou se é outro
+              movimento.
+            </p>
+            <p>
+              <strong>Movimento importado:</strong> {linhaDialogo.data} ·{" "}
+              {linhaDialogo.descricao} ·{" "}
+              {rotuloTipo(tipoDe(linhaDialogo.valor, negativoCredito))} ·{" "}
+              {moeda(Math.abs(linhaDialogo.valor))}
+            </p>
+
+            <table cellPadding={6} style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th>Data</th>
+                  <th>Descrição</th>
+                  <th>Tipo</th>
+                  <th>Valor</th>
+                  <th>Origem</th>
+                  <th>Responsável</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidatasDe(linhaDialogo).map((p) => (
+                  <tr key={p.id} style={{ borderTop: "1px solid #ccc" }}>
+                    <td>{p.data}</td>
+                    <td>{p.descricao}</td>
+                    <td>{rotuloTipo(p.tipo)}</td>
+                    <td style={{ textAlign: "right" }}>{moeda(p.valor)}</td>
+                    <td>{nomeDe(listas.origens, p.origem)}</td>
+                    <td>{nomeDe(listas.responsaveis, p.responsavel)}</td>
+                    <td>
+                      <button onClick={() => substituir(dialogo, p)}>
+                        É este (substituir a previsão)
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <p>
+              <button onClick={() => setDialogo(null)}>
+                É outro movimento (fechar)
+              </button>
+            </p>
+          </div>
+        </div>
       )}
     </main>
   );
