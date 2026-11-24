@@ -328,6 +328,7 @@ export default function Importar() {
       .reduce((soma, l) => soma + Math.abs(l.valor), 0);
   const totalDebitos = somar("D");
   const totalCreditos = somar("C");
+  const totalArquivo = linhas.reduce((soma, l) => soma + l.valor, 0);
 
   const comAlerta = linhas.filter(
     (l) => l.previsao === null && candidatasDe(l).length > 0,
@@ -455,6 +456,11 @@ export default function Importar() {
           <p>
             Mês: {formatarMes(mes)} · {linhas.length} transações · Débitos{" "}
             {moeda(totalDebitos)} · Créditos {moeda(totalCreditos)}
+          </p>
+
+          <p>
+            <strong>Total do arquivo: {moeda(totalArquivo)}</strong> (soma de
+            todos os valores, como estão no CSV, sem as linhas ignoradas)
           </p>
 
           {existentesTotal > 0 && (
