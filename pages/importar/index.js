@@ -3,6 +3,19 @@ import Link from "next/link";
 
 const TITULOS_IGNORADOS = ["pagamento recebido"];
 
+async function atualizarListas() {
+  try {
+    const resposta = await fetch("/api/v1/listas");
+    const dados = await resposta.json();
+    if (!resposta.ok)
+      throw new Error(dados.error || "Erro ao carregar as listas");
+    setListas(dados);
+    setMensagem({ tipo: "ok", texto: "Listas atualizadas" });
+  } catch (erro) {
+    setMensagem({ tipo: "erro", texto: erro.message });
+  }
+}
+
 function dividirLinhaCsv(linha) {
   const campos = [];
   let atual = "";
@@ -424,6 +437,8 @@ export default function Importar() {
             onChange={aoEscolherArquivo}
           />
         </label>
+
+        <button onClick={atualizarListas}>Atualizar listas</button>
       </div>
 
       {mensagem && (
