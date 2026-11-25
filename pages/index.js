@@ -17,6 +17,11 @@ const TELAS = [
     titulo: "Lançamentos manuais",
     descricao: "Previsões e movimentos manuais, como ajustes de saldo",
   },
+  {
+    href: "/relatorios",
+    titulo: "Relatórios",
+    descricao: "Gráficos de créditos e débitos por mês",
+  },
 ];
 
 export default function Menu() {

@@ -1,5 +1,10 @@
 import database from "infra/database.js";
-import { buscarCadastro, colunasRetorno, lerCorpo } from "infra/cadastros.js";
+import {
+  buscarCadastro,
+  colunasEscrita,
+  colunasRetorno,
+  lerCorpo,
+} from "infra/cadastros.js";
 
 const MSG_VINCULADO = "Não é possível excluir: existem movimentos vinculados";
 
@@ -33,12 +38,8 @@ async function cadastro(request, response) {
       return response.status(400).json({ error: erro });
     }
 
-    const sets = [`${config.nome} = $1::varchar`];
-    const valores = [dados.nome];
-    if (config.flag) {
-      sets.push(`${config.flag} = $2::boolean`);
-      valores.push(dados.negativoCredito);
-    }
+    const { colunas, valores, tipos } = colunasEscrita(config, dados);
+    const sets = colunas.map((c, i) => `${c} = $${i + 1}::${tipos[i]}`);
     valores.push(id);
     const posId = valores.length;
 

@@ -98,6 +98,19 @@ export default function Lancamentos() {
       .catch((erro) => setMensagem({ tipo: "erro", texto: erro.message }));
   }, []);
 
+  async function atualizarListas() {
+    try {
+      const resposta = await fetch("/api/v1/listas", { cache: "no-store" });
+      const dados = await resposta.json();
+      if (!resposta.ok)
+        throw new Error(dados.error || "Erro ao carregar as listas");
+      setListas(dados);
+      setMensagem({ tipo: "ok", texto: "Listas atualizadas" });
+    } catch (erro) {
+      setMensagem({ tipo: "erro", texto: erro.message });
+    }
+  }
+
   useEffect(() => {
     let cancelado = false;
     setItens([]);
@@ -260,6 +273,7 @@ export default function Lancamentos() {
             onChange={(e) => trocarMes(e.target.value)}
           />
         </label>
+        <button onClick={atualizarListas}>Atualizar listas</button>
       </div>
 
       {mensagem && (

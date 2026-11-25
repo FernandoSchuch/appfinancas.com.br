@@ -2,15 +2,41 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 const ABAS = [
-  { tipo: "contas", titulo: "Contas" },
-  { tipo: "origens", titulo: "Origens" },
-  { tipo: "responsaveis", titulo: "Responsáveis" },
+  {
+    tipo: "contas",
+    titulo: "Contas",
+    extras: [
+      {
+        campo: "negativoCredito",
+        rotulo: "Negativo no extrato é crédito (marque para cartão de crédito)",
+        coluna: "Negativo é crédito",
+        padrao: false,
+      },
+    ],
+  },
+  {
+    tipo: "origens",
+    titulo: "Origens",
+    extras: [
+      {
+        campo: "ignorarRelatorios",
+        rotulo:
+          "Não conta nos relatórios (ex.: pagamento de fatura, transferências entre contas)",
+        coluna: "Não conta nos relatórios",
+        padrao: false,
+      },
+    ],
+  },
+  { tipo: "responsaveis", titulo: "Responsáveis", extras: [] },
 ];
 
 const ordenar = (lista) =>
   [...lista].sort((a, b) =>
     a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }),
   );
+
+const extrasPadrao = (aba) =>
+  Object.fromEntries(aba.extras.map((e) => [e.campo, e.padrao]));
 
 async function chamar(url, metodo, corpo) {
   const resposta = await fetch(url, {
@@ -28,19 +54,20 @@ export default function Cadastros() {
   const [itens, setItens] = useState([]);
   const [mensagem, setMensagem] = useState(null);
   const [novoNome, setNovoNome] = useState("");
-  const [novoNegativo, setNovoNegativo] = useState(false);
+  const [novoExtras, setNovoExtras] = useState(extrasPadrao(ABAS[0]));
   const [editando, setEditando] = useState(null);
   const [ocupado, setOcupado] = useState(false);
 
-  const ehConta = tipo === "contas";
+  const aba = ABAS.find((a) => a.tipo === tipo);
   const url = `/api/v1/cadastros/${tipo}`;
 
   useEffect(() => {
     let cancelado = false;
+    const atual = ABAS.find((a) => a.tipo === tipo);
     setItens([]);
     setMensagem(null);
     setNovoNome("");
-    setNovoNegativo(false);
+    setNovoExtras(extrasPadrao(atual));
     setEditando(null);
 
     chamar(`/api/v1/cadastros/${tipo}`, "GET")
@@ -71,17 +98,29 @@ export default function Cadastros() {
 
   function incluir() {
     executar(async () => {
-      const corpo = { nome: novoNome };
-      if (ehConta) corpo.negativoCredito = novoNegativo;
-      const criado = await chamar(url, "POST", corpo);
+      const criado = await chamar(url, "POST", {
+        nome: novoNome,
+        ...novoExtras,
+      });
       setItens((atuais) => ordenar([...atuais, criado]));
       setNovoNome("");
-      setNovoNegativo(false);
+      setNovoExtras(extrasPadrao(aba));
     }, "Incluído com sucesso");
   }
 
+  function iniciarEdicao(item) {
+    setEditando({
+      id: item.id,
+      nome: item.nome,
+      ...Object.fromEntries(aba.extras.map((e) => [e.campo, item[e.campo]])),
+    });
+  }
+
   function salvar(original) {
-    if (ehConta && editando.negativoCredito !== original.negativoCredito) {
+    if (
+      tipo === "contas" &&
+      editando.negativoCredito !== original.negativoCredito
+    ) {
       const ok = window.confirm(
         "Alterar essa configuração vale só para importações futuras. Os movimentos já gravados não mudam. Continuar?",
       );
@@ -89,7 +128,9 @@ export default function Cadastros() {
     }
     executar(async () => {
       const corpo = { nome: editando.nome };
-      if (ehConta) corpo.negativoCredito = editando.negativoCredito;
+      aba.extras.forEach((e) => {
+        corpo[e.campo] = editando[e.campo];
+      });
       const atualizado = await chamar(`${url}/${original.id}`, "PUT", corpo);
       setItens((atuais) =>
         ordenar(atuais.map((i) => (i.id === original.id ? atualizado : i))),
@@ -147,16 +188,18 @@ export default function Cadastros() {
           onChange={(e) => setNovoNome(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !ocupado && incluir()}
         />
-        {ehConta && (
-          <label>
+        {aba.extras.map((e) => (
+          <label key={e.campo}>
             <input
               type="checkbox"
-              checked={novoNegativo}
-              onChange={(e) => setNovoNegativo(e.target.checked)}
+              checked={novoExtras[e.campo] ?? false}
+              onChange={(ev) =>
+                setNovoExtras({ ...novoExtras, [e.campo]: ev.target.checked })
+              }
             />{" "}
-            Negativo no extrato é crédito (marque para cartão de crédito)
+            {e.rotulo}
           </label>
-        )}
+        ))}
         <button onClick={incluir} disabled={ocupado || novoNome.trim() === ""}>
           Incluir
         </button>
@@ -166,7 +209,9 @@ export default function Cadastros() {
         <thead>
           <tr style={{ textAlign: "left" }}>
             <th>Nome</th>
-            {ehConta && <th>Negativo é crédito</th>}
+            {aba.extras.map((e) => (
+              <th key={e.campo}>{e.coluna}</th>
+            ))}
             <th></th>
           </tr>
         </thead>
@@ -188,26 +233,26 @@ export default function Cadastros() {
                     item.nome
                   )}
                 </td>
-                {ehConta && (
-                  <td>
+                {aba.extras.map((e) => (
+                  <td key={e.campo}>
                     {emEdicao ? (
                       <input
                         type="checkbox"
-                        checked={editando.negativoCredito}
-                        onChange={(e) =>
+                        checked={editando[e.campo] ?? false}
+                        onChange={(ev) =>
                           setEditando({
                             ...editando,
-                            negativoCredito: e.target.checked,
+                            [e.campo]: ev.target.checked,
                           })
                         }
                       />
-                    ) : item.negativoCredito ? (
+                    ) : item[e.campo] ? (
                       "Sim"
                     ) : (
                       "Não"
                     )}
                   </td>
-                )}
+                ))}
                 <td style={{ display: "flex", gap: 8 }}>
                   {emEdicao ? (
                     <>
@@ -227,13 +272,7 @@ export default function Cadastros() {
                   ) : (
                     <>
                       <button
-                        onClick={() =>
-                          setEditando({
-                            id: item.id,
-                            nome: item.nome,
-                            negativoCredito: item.negativoCredito,
-                          })
-                        }
+                        onClick={() => iniciarEdicao(item)}
                         disabled={ocupado}
                       >
                         Editar

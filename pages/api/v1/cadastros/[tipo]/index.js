@@ -1,5 +1,10 @@
 import database from "infra/database.js";
-import { buscarCadastro, colunasRetorno, lerCorpo } from "infra/cadastros.js";
+import {
+  buscarCadastro,
+  colunasEscrita,
+  colunasRetorno,
+  lerCorpo,
+} from "infra/cadastros.js";
 
 async function cadastros(request, response) {
   const cadastro = buscarCadastro(request.query.tipo);
@@ -22,14 +27,7 @@ async function cadastros(request, response) {
       return response.status(400).json({ error: erro });
     }
 
-    const colunas = [cadastro.nome];
-    const tipos = ["varchar"];
-    const valores = [dados.nome];
-    if (cadastro.flag) {
-      colunas.push(cadastro.flag);
-      tipos.push("boolean");
-      valores.push(dados.negativoCredito);
-    }
+    const { colunas, valores, tipos } = colunasEscrita(cadastro, dados);
 
     const result = await database.query({
       text: `
