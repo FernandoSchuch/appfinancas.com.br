@@ -5,7 +5,7 @@ const TITULOS_IGNORADOS = ["pagamento recebido"];
 
 async function atualizarListas() {
   try {
-    const resposta = await fetch("/api/v1/listas");
+    const resposta = await fetch("/api/v1/listas", { cache: "no-store" });
     const dados = await resposta.json();
     if (!resposta.ok)
       throw new Error(dados.error || "Erro ao carregar as listas");
