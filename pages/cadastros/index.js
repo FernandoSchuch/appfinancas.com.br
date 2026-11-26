@@ -19,11 +19,11 @@ const ABAS = [
     titulo: "Origens",
     extras: [
       {
-        campo: "ignorarRelatorios",
+        campo: "constaRelatorios",
         rotulo:
-          "Não conta nos relatórios (ex.: pagamento de fatura, transferências entre contas)",
-        coluna: "Não conta nos relatórios",
-        padrao: false,
+          "Consta nos relatórios (desmarque para pagamento de fatura, transferências entre contas)",
+        coluna: "Consta nos relatórios",
+        padrao: true,
       },
     ],
   },

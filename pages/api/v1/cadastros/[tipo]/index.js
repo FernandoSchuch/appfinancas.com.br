@@ -27,12 +27,12 @@ async function cadastros(request, response) {
       return response.status(400).json({ error: erro });
     }
 
-    const { colunas, valores, tipos } = colunasEscrita(cadastro, dados);
+    const { colunas, valores, expressoes } = colunasEscrita(cadastro, dados);
 
     const result = await database.query({
       text: `
         INSERT INTO ${cadastro.tabela} (${colunas.join(", ")})
-        SELECT ${valores.map((_, i) => `$${i + 1}::${tipos[i]}`).join(", ")}
+        SELECT ${expressoes.join(", ")}
         WHERE NOT EXISTS (
           SELECT 1 FROM ${cadastro.tabela}
           WHERE lower(${cadastro.nome}) = lower($1::varchar)

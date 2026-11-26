@@ -28,7 +28,7 @@ export default function Relatorios() {
   const [contasSel, setContasSel] = useState([]);
   const [meses, setMeses] = useState(6);
   const [considerarPrevisoes, setConsiderarPrevisoes] = useState(true);
-  const [ignorarOrigens, setIgnorarOrigens] = useState(true);
+  const [somenteQueConstam, setSomenteQueConstam] = useState(true);
   const [dados, setDados] = useState([]);
   const [erro, setErro] = useState(null);
 
@@ -57,7 +57,7 @@ export default function Relatorios() {
       meses: String(meses),
       ate: mesAtual(),
       contas: chaveContas,
-      ignorar: ignorarOrigens ? "1" : "0",
+      filtrar: somenteQueConstam ? "1" : "0",
     });
 
     fetch(`/api/v1/relatorios/resumo-mensal?${params}`, { cache: "no-store" })
@@ -77,7 +77,7 @@ export default function Relatorios() {
     return () => {
       cancelado = true;
     };
-  }, [meses, chaveContas, ignorarOrigens]);
+  }, [meses, chaveContas, somenteQueConstam]);
 
   function alternarConta(id) {
     setContasSel((atuais) =>
@@ -146,10 +146,10 @@ export default function Relatorios() {
         <label>
           <input
             type="checkbox"
-            checked={ignorarOrigens}
-            onChange={(e) => setIgnorarOrigens(e.target.checked)}
+            checked={somenteQueConstam}
+            onChange={(e) => setSomenteQueConstam(e.target.checked)}
           />{" "}
-          Ignorar origens marcadas
+          Somente origens que constam nos relatórios
         </label>
       </div>
 

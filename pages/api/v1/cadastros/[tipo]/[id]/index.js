@@ -38,8 +38,8 @@ async function cadastro(request, response) {
       return response.status(400).json({ error: erro });
     }
 
-    const { colunas, valores, tipos } = colunasEscrita(config, dados);
-    const sets = colunas.map((c, i) => `${c} = $${i + 1}::${tipos[i]}`);
+    const { colunas, valores, expressoes } = colunasEscrita(config, dados);
+    const sets = colunas.map((c, i) => `${c} = ${expressoes[i]}`);
     valores.push(id);
     const posId = valores.length;
 

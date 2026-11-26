@@ -12,7 +12,7 @@ async function resumoMensal(request, response) {
     .split(",")
     .filter(Boolean)
     .map(Number);
-  const ignorar = request.query.ignorar === "1";
+  const filtrar = request.query.filtrar === "1";
 
   if (!Number.isInteger(meses) || meses < 1 || meses > 36) {
     return response.status(400).json({ error: "Meses deve ser de 1 a 36" });
@@ -42,12 +42,12 @@ async function resumoMensal(request, response) {
        AND mv.con_conta = ANY($3::numeric[])
        AND NOT ($4::boolean AND EXISTS (
              SELECT 1 FROM origens o
-             WHERE o.ori_origem = mv.ori_origem AND o.ori_ignorar_relatorios
+             WHERE o.ori_origem = mv.ori_origem AND o.ori_consta_relatorios = 'N'
            ))
       GROUP BY j.inicio
       ORDER BY j.inicio
     `,
-    values: [`${ate}-01`, meses, contas, ignorar],
+    values: [`${ate}-01`, meses, contas, filtrar],
   });
 
   return response.status(200).json(result.rows);

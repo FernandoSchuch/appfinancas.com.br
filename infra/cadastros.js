@@ -18,10 +18,10 @@ export const CADASTROS = {
     nome: "ori_descricao",
     extras: [
       {
-        coluna: "ori_ignorar_relatorios",
-        campo: "ignorarRelatorios",
-        tipo: "boolean",
-        erro: "Informe se a origem deve ser ignorada nos relatórios",
+        coluna: "ori_consta_relatorios",
+        campo: "constaRelatorios",
+        tipo: "sn",
+        erro: "Informe se a origem consta nos relatórios",
       },
     ],
   },
@@ -33,19 +33,17 @@ export const CADASTROS = {
   },
 };
 
-const CAST = { boolean: "boolean", valor: "numeric" };
-
 export function buscarCadastro(tipo) {
   return Object.hasOwn(CADASTROS, tipo) ? CADASTROS[tipo] : null;
 }
 
 export function colunasRetorno(cadastro) {
   const extras = cadastro.extras
-    .map((e) =>
-      e.tipo === "valor"
-        ? `, ${e.coluna}::float8 AS "${e.campo}"`
-        : `, ${e.coluna} AS "${e.campo}"`,
-    )
+    .map((e) => {
+      if (e.tipo === "valor") return `, ${e.coluna}::float8 AS "${e.campo}"`;
+      if (e.tipo === "sn") return `, (${e.coluna} = 'S') AS "${e.campo}"`;
+      return `, ${e.coluna} AS "${e.campo}"`;
+    })
     .join("");
   return `${cadastro.id}::int AS id, ${cadastro.nome} AS nome${extras}`;
 }
@@ -58,7 +56,7 @@ export function lerCorpo(cadastro, body) {
   const extras = [];
   for (const e of cadastro.extras) {
     const valor = body?.[e.campo];
-    if (e.tipo === "boolean") {
+    if (e.tipo === "boolean" || e.tipo === "sn") {
       if (typeof valor !== "boolean") return { erro: e.erro };
       extras.push(valor);
     } else if (valor === null || valor === undefined) {
@@ -78,11 +76,21 @@ export function lerCorpo(cadastro, body) {
   return { dados: { nome, extras } };
 }
 
-// colunas, valores e tipos (para os casts) na mesma ordem; o nome é sempre o $1
+// expressão SQL de cada coluna, a partir do parâmetro posicional ($1, $2...)
+const EXPRESSAO = {
+  boolean: (p) => `${p}::boolean`,
+  valor: (p) => `${p}::numeric`,
+  sn: (p) => `CASE WHEN ${p}::boolean THEN 'S' ELSE 'N' END`,
+};
+
+// colunas, valores e expressões na mesma ordem; o nome é sempre o $1
 export function colunasEscrita(cadastro, dados) {
   return {
     colunas: [cadastro.nome, ...cadastro.extras.map((e) => e.coluna)],
     valores: [dados.nome, ...dados.extras],
-    tipos: ["varchar", ...cadastro.extras.map((e) => CAST[e.tipo])],
+    expressoes: [
+      "$1::varchar",
+      ...cadastro.extras.map((e, i) => EXPRESSAO[e.tipo](`$${i + 2}`)),
+    ],
   };
 }
