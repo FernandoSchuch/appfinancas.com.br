@@ -10,6 +10,12 @@ export const CADASTROS = {
         tipo: "boolean",
         erro: "Informe se, no extrato, o valor negativo é crédito",
       },
+      {
+        coluna: "con_formato",
+        campo: "formato",
+        tipo: "ref",
+        erro: "Formato de importação inválido",
+      },
     ],
   },
   origens: {
@@ -41,6 +47,7 @@ export function colunasRetorno(cadastro) {
   const extras = cadastro.extras
     .map((e) => {
       if (e.tipo === "valor") return `, ${e.coluna}::float8 AS "${e.campo}"`;
+      if (e.tipo === "ref") return `, ${e.coluna}::int AS "${e.campo}"`;
       if (e.tipo === "sn") return `, (${e.coluna} = 'S') AS "${e.campo}"`;
       return `, ${e.coluna} AS "${e.campo}"`;
     })
@@ -59,6 +66,11 @@ export function lerCorpo(cadastro, body) {
     if (e.tipo === "boolean" || e.tipo === "sn") {
       if (typeof valor !== "boolean") return { erro: e.erro };
       extras.push(valor);
+    } else if (e.tipo === "ref") {
+      // referência opcional a outro cadastro: vazio ou o código
+      if (valor === null || valor === undefined) extras.push(null);
+      else if (Number.isInteger(valor) && valor > 0) extras.push(valor);
+      else return { erro: e.erro };
     } else if (valor === null || valor === undefined) {
       extras.push(null);
     } else if (
@@ -80,6 +92,7 @@ export function lerCorpo(cadastro, body) {
 const EXPRESSAO = {
   boolean: (p) => `${p}::boolean`,
   valor: (p) => `${p}::numeric`,
+  ref: (p) => `${p}::numeric`,
   sn: (p) => `CASE WHEN ${p}::boolean THEN 'S' ELSE 'N' END`,
 };
 

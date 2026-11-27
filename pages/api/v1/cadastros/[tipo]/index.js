@@ -29,25 +29,35 @@ async function cadastros(request, response) {
 
     const { colunas, valores, expressoes } = colunasEscrita(cadastro, dados);
 
-    const result = await database.query({
-      text: `
-        INSERT INTO ${cadastro.tabela} (${colunas.join(", ")})
-        SELECT ${expressoes.join(", ")}
-        WHERE NOT EXISTS (
-          SELECT 1 FROM ${cadastro.tabela}
-          WHERE lower(${cadastro.nome}) = lower($1::varchar)
-        )
-        RETURNING ${colunasRetorno(cadastro)}
-      `,
-      values: valores,
-    });
+    try {
+      const result = await database.query({
+        text: `
+          INSERT INTO ${cadastro.tabela} (${colunas.join(", ")})
+          SELECT ${expressoes.join(", ")}
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ${cadastro.tabela}
+            WHERE lower(${cadastro.nome}) = lower($1::varchar)
+          )
+          RETURNING ${colunasRetorno(cadastro)}
+        `,
+        values: valores,
+      });
 
-    if (result.rowCount === 0) {
-      return response
-        .status(409)
-        .json({ error: "Já existe um cadastro com esse nome" });
+      if (result.rowCount === 0) {
+        return response
+          .status(409)
+          .json({ error: "Já existe um cadastro com esse nome" });
+      }
+      return response.status(201).json(result.rows[0]);
+    } catch (error) {
+      if (error.code === "23503") {
+        return response
+          .status(400)
+          .json({ error: "O formato de importação escolhido não existe" });
+      }
+      console.error(error);
+      return response.status(500).json({ error: "Erro ao gravar o cadastro" });
     }
-    return response.status(201).json(result.rows[0]);
   }
 
   response.setHeader("Allow", ["GET", "POST"]);

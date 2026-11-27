@@ -277,7 +277,7 @@ export default function Lancamentos() {
       </div>
 
       {mensagem && (
-        <p style={{ color: mensagem.tipo === "ok" ? "green" : "crimson" }}>
+        <p style={{ color: mensagem.tipo === "ok" ? "var(--ok)" : "var(--erro)" }}>
           {mensagem.texto}
         </p>
       )}
@@ -335,7 +335,7 @@ export default function Lancamentos() {
             </button>
           </div>
           {novo.natureza === "M" && (
-            <p style={{ color: "#996600", marginTop: 0 }}>
+            <p style={{ color: "var(--alerta)", marginTop: 0 }}>
               Movimento manual altera o saldo da conta imediatamente.
             </p>
           )}
@@ -369,7 +369,7 @@ export default function Lancamentos() {
               {itens.map((item) => {
                 const emEdicao = editando?.id === item.id;
                 return (
-                  <tr key={item.id} style={{ borderTop: "1px solid #ccc" }}>
+                  <tr key={item.id} style={{ borderTop: "1px solid var(--borda)" }}>
                     {emEdicao ? (
                       <>
                         <td>

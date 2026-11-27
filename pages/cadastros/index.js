@@ -8,9 +8,17 @@ const ABAS = [
     extras: [
       {
         campo: "negativoCredito",
+        tipo: "boolean",
         rotulo: "Negativo no extrato é crédito (marque para cartão de crédito)",
         coluna: "Negativo é crédito",
         padrao: false,
+      },
+      {
+        campo: "formato",
+        tipo: "ref",
+        rotulo: "Formato de importação",
+        coluna: "Formato de importação",
+        padrao: null,
       },
     ],
   },
@@ -20,6 +28,7 @@ const ABAS = [
     extras: [
       {
         campo: "constaRelatorios",
+        tipo: "boolean",
         rotulo:
           "Consta nos relatórios (desmarque para pagamento de fatura, transferências entre contas)",
         coluna: "Consta nos relatórios",
@@ -49,9 +58,53 @@ async function chamar(url, metodo, corpo) {
   return dados;
 }
 
+// campo extra de um cadastro: caixa de marcação ou escolha de outro cadastro
+function CampoExtra({ extra, valor, aoMudar, formatos, compacto }) {
+  if (extra.tipo === "ref") {
+    const seletor = (
+      <select
+        value={valor ?? ""}
+        onChange={(e) =>
+          aoMudar(e.target.value === "" ? null : Number(e.target.value))
+        }
+      >
+        <option value="">(nenhum)</option>
+        {formatos.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.nome}
+          </option>
+        ))}
+      </select>
+    );
+    return compacto ? (
+      seletor
+    ) : (
+      <label>
+        {extra.rotulo}: {seletor}
+      </label>
+    );
+  }
+
+  const caixa = (
+    <input
+      type="checkbox"
+      checked={valor ?? false}
+      onChange={(e) => aoMudar(e.target.checked)}
+    />
+  );
+  return compacto ? (
+    caixa
+  ) : (
+    <label>
+      {caixa} {extra.rotulo}
+    </label>
+  );
+}
+
 export default function Cadastros() {
   const [tipo, setTipo] = useState("contas");
   const [itens, setItens] = useState([]);
+  const [formatos, setFormatos] = useState([]);
   const [mensagem, setMensagem] = useState(null);
   const [novoNome, setNovoNome] = useState("");
   const [novoExtras, setNovoExtras] = useState(extrasPadrao(ABAS[0]));
@@ -60,6 +113,12 @@ export default function Cadastros() {
 
   const aba = ABAS.find((a) => a.tipo === tipo);
   const url = `/api/v1/cadastros/${tipo}`;
+
+  useEffect(() => {
+    chamar("/api/v1/formatos", "GET")
+      .then(setFormatos)
+      .catch((erro) => setMensagem({ tipo: "erro", texto: erro.message }));
+  }, []);
 
   useEffect(() => {
     let cancelado = false;
@@ -148,6 +207,12 @@ export default function Cadastros() {
     }, "Excluído com sucesso");
   }
 
+  const exibir = (extra, valor) => {
+    if (extra.tipo === "ref")
+      return formatos.find((f) => f.id === valor)?.nome ?? "—";
+    return valor ? "Sim" : "Não";
+  };
+
   return (
     <main style={{ padding: 24, fontFamily: "sans-serif" }}>
       <p>
@@ -168,7 +233,7 @@ export default function Cadastros() {
       </div>
 
       {mensagem && (
-        <p style={{ color: mensagem.tipo === "ok" ? "green" : "crimson" }}>
+        <p style={{ color: mensagem.tipo === "ok" ? "var(--ok)" : "var(--erro)" }}>
           {mensagem.texto}
         </p>
       )}
@@ -178,6 +243,7 @@ export default function Cadastros() {
           display: "flex",
           gap: 12,
           alignItems: "center",
+          flexWrap: "wrap",
           marginBottom: 16,
         }}
       >
@@ -189,16 +255,13 @@ export default function Cadastros() {
           onKeyDown={(e) => e.key === "Enter" && !ocupado && incluir()}
         />
         {aba.extras.map((e) => (
-          <label key={e.campo}>
-            <input
-              type="checkbox"
-              checked={novoExtras[e.campo] ?? false}
-              onChange={(ev) =>
-                setNovoExtras({ ...novoExtras, [e.campo]: ev.target.checked })
-              }
-            />{" "}
-            {e.rotulo}
-          </label>
+          <CampoExtra
+            key={e.campo}
+            extra={e}
+            valor={novoExtras[e.campo]}
+            aoMudar={(v) => setNovoExtras({ ...novoExtras, [e.campo]: v })}
+            formatos={formatos}
+          />
         ))}
         <button onClick={incluir} disabled={ocupado || novoNome.trim() === ""}>
           Incluir
@@ -219,7 +282,7 @@ export default function Cadastros() {
           {itens.map((item) => {
             const emEdicao = editando?.id === item.id;
             return (
-              <tr key={item.id} style={{ borderTop: "1px solid #ccc" }}>
+              <tr key={item.id} style={{ borderTop: "1px solid var(--borda)" }}>
                 <td>
                   {emEdicao ? (
                     <input
@@ -236,20 +299,17 @@ export default function Cadastros() {
                 {aba.extras.map((e) => (
                   <td key={e.campo}>
                     {emEdicao ? (
-                      <input
-                        type="checkbox"
-                        checked={editando[e.campo] ?? false}
-                        onChange={(ev) =>
-                          setEditando({
-                            ...editando,
-                            [e.campo]: ev.target.checked,
-                          })
+                      <CampoExtra
+                        extra={e}
+                        valor={editando[e.campo]}
+                        aoMudar={(v) =>
+                          setEditando({ ...editando, [e.campo]: v })
                         }
+                        formatos={formatos}
+                        compacto
                       />
-                    ) : item[e.campo] ? (
-                      "Sim"
                     ) : (
-                      "Não"
+                      exibir(e, item[e.campo])
                     )}
                   </td>
                 ))}

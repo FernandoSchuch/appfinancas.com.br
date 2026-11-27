@@ -1,103 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
-const TITULOS_IGNORADOS = ["pagamento recebido"];
-
-function dividirLinhaCsv(linha) {
-  const campos = [];
-  let atual = "";
-  let entreAspas = false;
-  for (let i = 0; i < linha.length; i++) {
-    const c = linha[i];
-    if (c === '"') {
-      if (entreAspas && linha[i + 1] === '"') {
-        atual += '"';
-        i++;
-      } else {
-        entreAspas = !entreAspas;
-      }
-    } else if (c === "," && !entreAspas) {
-      campos.push(atual);
-      atual = "";
-    } else {
-      atual += c;
-    }
-  }
-  campos.push(atual);
-  return campos.map((s) => s.trim());
-}
-
-function converterValor(texto) {
-  const t = texto.replace(/\s/g, "");
-  if (t === "") return NaN;
-  const normalizado = t.includes(",")
-    ? t.replace(/\./g, "").replace(",", ".")
-    : t;
-  return Number(normalizado);
-}
-
-function lerCsv(texto) {
-  const linhasTexto = texto.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const cabecalho = dividirLinhaCsv(linhasTexto[0] || "").map((c) =>
-    c.toLowerCase(),
-  );
-  const iData = cabecalho.indexOf("date");
-  const iTitulo = cabecalho.indexOf("title");
-  const iValor = cabecalho.indexOf("amount");
-
-  if (iData < 0 || iTitulo < 0 || iValor < 0) {
-    return {
-      linhas: [],
-      erros: ["Cabeçalho esperado: date,title,amount"],
-      ignoradas: [],
-      mes: "",
-    };
-  }
-
-  const linhas = [];
-  const erros = [];
-  const ignoradas = [];
-  for (let i = 1; i < linhasTexto.length; i++) {
-    if (linhasTexto[i].trim() === "") continue;
-    const campos = dividirLinhaCsv(linhasTexto[i]);
-    const data = campos[iData] || "";
-    const descricao = campos[iTitulo] || "";
-    const valor = converterValor(campos[iValor] || "");
-    const n = i + 1;
-
-    if (TITULOS_IGNORADOS.includes(descricao.toLowerCase())) {
-      ignoradas.push(`Linha ${n}: ${descricao} (${campos[iValor]})`);
-      continue;
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data))
-      erros.push(`Linha ${n}: data inválida`);
-    else if (!descricao) erros.push(`Linha ${n}: título vazio`);
-    else if (!Number.isFinite(valor)) erros.push(`Linha ${n}: valor inválido`);
-    else
-      linhas.push({
-        data,
-        descricao,
-        valor,
-        origem: "",
-        responsavel: "",
-        previsao: null,
-      });
-  }
-
-  if (erros.length === 0 && linhas.length === 0) {
-    erros.push("Arquivo sem transações");
-  }
-
-  const meses = [...new Set(linhas.map((l) => l.data.slice(0, 7)))].sort();
-  if (meses.length > 1) {
-    erros.push(
-      `O arquivo tem movimentos de meses diferentes (${meses.join(", ")})`,
-    );
-  }
-
-  return { linhas, erros, ignoradas, mes: meses.length === 1 ? meses[0] : "" };
-}
+import { decodificar, lerComFormato } from "infra/importacao.js";
 
 // Pareia cada linha do arquivo com um movimento já gravado (mesma data,
 // descrição e valor), na ordem, e copia origem e responsável do banco.
@@ -134,7 +37,7 @@ function nomesCombinam(a, b) {
 }
 
 async function consultar(url) {
-  const resposta = await fetch(url);
+  const resposta = await fetch(url, { cache: "no-store" });
   const dados = await resposta.json();
   if (!resposta.ok) throw new Error(dados.error || "Erro ao consultar dados");
   return dados;
@@ -156,7 +59,9 @@ export default function Importar() {
     origens: [],
     responsaveis: [],
   });
+  const [formatos, setFormatos] = useState([]);
   const [conta, setConta] = useState("");
+  const [formatoId, setFormatoId] = useState("");
   const [linhas, setLinhas] = useState([]);
   const [previsoes, setPrevisoes] = useState([]);
   const [dialogo, setDialogo] = useState(null);
@@ -168,9 +73,11 @@ export default function Importar() {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/listas")
-      .then((r) => r.json())
-      .then(setListas)
+    Promise.all([consultar("/api/v1/listas"), consultar("/api/v1/formatos")])
+      .then(([dadosListas, dadosFormatos]) => {
+        setListas(dadosListas);
+        setFormatos(dadosFormatos);
+      })
       .catch(() =>
         setMensagem({ tipo: "erro", texto: "Erro ao carregar as listas" }),
       );
@@ -178,11 +85,12 @@ export default function Importar() {
 
   async function atualizarListas() {
     try {
-      const resposta = await fetch("/api/v1/listas", { cache: "no-store" });
-      const dados = await resposta.json();
-      if (!resposta.ok)
-        throw new Error(dados.error || "Erro ao carregar as listas");
-      setListas(dados);
+      const [dadosListas, dadosFormatos] = await Promise.all([
+        consultar("/api/v1/listas"),
+        consultar("/api/v1/formatos"),
+      ]);
+      setListas(dadosListas);
+      setFormatos(dadosFormatos);
       setMensagem({ tipo: "ok", texto: "Listas atualizadas" });
     } catch (erro) {
       setMensagem({ tipo: "erro", texto: erro.message });
@@ -201,21 +109,40 @@ export default function Importar() {
 
   // Trocar a conta limpa a tabela: as sugestões, as previsões e o mês a ser
   // regravado pertencem à conta escolhida antes de carregar o arquivo.
+  // O formato volta a ser o padrão da conta.
   function trocarConta(valor) {
     setConta(valor);
     setMensagem(null);
     limparImportacao();
+    const escolhida = listas.contas.find((c) => String(c.id) === valor);
+    setFormatoId(escolhida?.formato ? String(escolhida.formato) : "");
   }
+
+  function trocarFormato(valor) {
+    setFormatoId(valor);
+    setMensagem(null);
+    limparImportacao();
+  }
+
+  const contaSelecionada = listas.contas.find((c) => String(c.id) === conta);
+  const negativoCredito = contaSelecionada
+    ? contaSelecionada.negativoCredito
+    : false;
+  const formatoSelecionado = formatos.find((f) => String(f.id) === formatoId);
 
   async function aoEscolherArquivo(event) {
     const arquivo = event.target.files[0];
     event.target.value = "";
-    if (!arquivo) return;
+    if (!arquivo || !formatoSelecionado) return;
 
     setMensagem(null);
     limparImportacao();
 
-    const resultado = lerCsv(await arquivo.text());
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    const { texto } = decodificar(bytes, formatoSelecionado.codificacao);
+    const resultado = lerComFormato(texto, formatoSelecionado, {
+      negativoCredito,
+    });
     setErros(resultado.erros);
     setIgnoradas(resultado.ignoradas);
     if (resultado.erros.length > 0) return;
@@ -331,10 +258,6 @@ export default function Importar() {
   const classificada = (l) => l.origem !== "" && l.responsavel !== "";
   const tudoClassificado = linhas.length > 0 && linhas.every(classificada);
 
-  const contaSelecionada = listas.contas.find((c) => String(c.id) === conta);
-  const negativoCredito = contaSelecionada
-    ? contaSelecionada.negativoCredito
-    : false;
   const somar = (tipo) =>
     linhas
       .filter((l) => tipoDe(l.valor, negativoCredito) === tipo)
@@ -413,6 +336,7 @@ export default function Importar() {
           display: "flex",
           gap: 16,
           alignItems: "center",
+          flexWrap: "wrap",
           marginBottom: 16,
         }}
       >
@@ -429,11 +353,27 @@ export default function Importar() {
         </label>
 
         <label>
+          Formato do arquivo:{" "}
+          <select
+            value={formatoId}
+            disabled={conta === ""}
+            onChange={(e) => trocarFormato(e.target.value)}
+          >
+            <option value="">Selecione...</option>
+            {formatos.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
           Arquivo:{" "}
           <input
             type="file"
-            accept=".csv,text/csv"
-            disabled={conta === ""}
+            accept=".csv,.txt,text/csv"
+            disabled={conta === "" || formatoId === ""}
             onChange={aoEscolherArquivo}
           />
         </label>
@@ -441,22 +381,43 @@ export default function Importar() {
         <button onClick={atualizarListas}>Atualizar listas</button>
       </div>
 
+      {conta !== "" && formatoId === "" && (
+        <p style={{ color: "var(--alerta)" }}>
+          Esta conta não tem formato padrão. Escolha o formato do arquivo ou
+          associe um à conta em <Link href="/cadastros">Cadastros</Link>.
+        </p>
+      )}
+
       {mensagem && (
-        <p style={{ color: mensagem.tipo === "ok" ? "green" : "crimson" }}>
+        <p
+          style={{
+            color: mensagem.tipo === "ok" ? "var(--ok)" : "var(--erro)",
+          }}
+        >
           {mensagem.texto}
         </p>
       )}
 
       {erros.length > 0 && (
-        <ul style={{ color: "crimson" }}>
-          {erros.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
+        <>
+          <ul style={{ color: "var(--erro)" }}>
+            {erros.slice(0, 10).map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+            {erros.length > 10 && (
+              <li>... e mais {erros.length - 10} problemas</li>
+            )}
+          </ul>
+          <p style={{ color: "var(--texto-suave)" }}>
+            O arquivo não bate com o formato "{formatoSelecionado?.nome}".
+            Escolha outro formato ou ajuste este em{" "}
+            <Link href="/formatos">Formatos de importação</Link>.
+          </p>
+        </>
       )}
 
       {ignoradas.length > 0 && (
-        <div style={{ color: "#996600" }}>
+        <div style={{ color: "var(--alerta)" }}>
           <p>Linhas ignoradas (não serão importadas):</p>
           <ul>
             {ignoradas.map((i) => (
@@ -479,14 +440,14 @@ export default function Importar() {
           </p>
 
           {existentesTotal > 0 && (
-            <p style={{ color: "#996600" }}>
+            <p style={{ color: "var(--alerta)" }}>
               Já existem {existentesTotal} movimentos dessa conta neste mês. Ao
               aplicar, eles serão apagados e substituídos pelos desta tabela.
             </p>
           )}
 
           {(comAlerta > 0 || substituidas > 0) && (
-            <p style={{ color: "#996600" }}>
+            <p style={{ color: "var(--alerta)" }}>
               {comAlerta > 0 &&
                 `⚠️ ${comAlerta} linhas têm possível previsão correspondente (clique no ícone para decidir). `}
               {substituidas > 0 &&
@@ -512,8 +473,10 @@ export default function Importar() {
                 <tr
                   key={i}
                   style={{
-                    borderTop: "1px solid #ccc",
-                    background: classificada(l) ? "#e6f4ea" : "transparent",
+                    borderTop: "1px solid var(--borda)",
+                    background: classificada(l)
+                      ? "var(--fundo-ok)"
+                      : "transparent",
                   }}
                 >
                   <td>{i + 1}</td>
@@ -591,7 +554,7 @@ export default function Importar() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.4)",
+            background: "rgba(0,0,0,0.6)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -600,8 +563,9 @@ export default function Importar() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#fff",
-              color: "#000",
+              background: "var(--card)",
+              color: "var(--texto)",
+              border: "1px solid var(--borda)",
               padding: 24,
               borderRadius: 8,
               maxWidth: 900,
@@ -636,7 +600,10 @@ export default function Importar() {
               </thead>
               <tbody>
                 {candidatasDe(linhaDialogo).map((p) => (
-                  <tr key={p.id} style={{ borderTop: "1px solid #ccc" }}>
+                  <tr
+                    key={p.id}
+                    style={{ borderTop: "1px solid var(--borda)" }}
+                  >
                     <td>{p.data}</td>
                     <td>{p.descricao}</td>
                     <td>{rotuloTipo(p.tipo)}</td>

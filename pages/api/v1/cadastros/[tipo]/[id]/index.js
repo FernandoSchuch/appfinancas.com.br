@@ -43,27 +43,37 @@ async function cadastro(request, response) {
     valores.push(id);
     const posId = valores.length;
 
-    const result = await database.query({
-      text: `
-        UPDATE ${config.tabela}
-        SET ${sets.join(", ")}
-        WHERE ${config.id} = $${posId}::numeric
-          AND NOT EXISTS (
-            SELECT 1 FROM ${config.tabela}
-            WHERE lower(${config.nome}) = lower($1::varchar)
-              AND ${config.id} <> $${posId}::numeric
-          )
-        RETURNING ${colunasRetorno(config)}
-      `,
-      values: valores,
-    });
+    try {
+      const result = await database.query({
+        text: `
+          UPDATE ${config.tabela}
+          SET ${sets.join(", ")}
+          WHERE ${config.id} = $${posId}::numeric
+            AND NOT EXISTS (
+              SELECT 1 FROM ${config.tabela}
+              WHERE lower(${config.nome}) = lower($1::varchar)
+                AND ${config.id} <> $${posId}::numeric
+            )
+          RETURNING ${colunasRetorno(config)}
+        `,
+        values: valores,
+      });
 
-    if (result.rowCount === 0) {
-      return response
-        .status(409)
-        .json({ error: "Já existe um cadastro com esse nome" });
+      if (result.rowCount === 0) {
+        return response
+          .status(409)
+          .json({ error: "Já existe um cadastro com esse nome" });
+      }
+      return response.status(200).json(result.rows[0]);
+    } catch (error) {
+      if (error.code === "23503") {
+        return response
+          .status(400)
+          .json({ error: "O formato de importação escolhido não existe" });
+      }
+      console.error(error);
+      return response.status(500).json({ error: "Erro ao gravar o cadastro" });
     }
-    return response.status(200).json(result.rows[0]);
   }
 
   // DELETE

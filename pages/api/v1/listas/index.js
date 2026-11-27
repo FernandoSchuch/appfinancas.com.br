@@ -8,7 +8,8 @@ async function listas(request, response) {
 
   const contas = await database.query(
     `SELECT con_conta::int AS id, con_descricao AS descricao,
-            con_negativo_credito AS "negativoCredito"
+            con_negativo_credito AS "negativoCredito",
+            con_formato::int AS formato
      FROM contas_bancarias ORDER BY con_descricao`,
   );
   const origens = await database.query(

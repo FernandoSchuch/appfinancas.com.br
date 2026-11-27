@@ -102,12 +102,12 @@ export default function Relatorios() {
 
   const situacao = (resultado) => {
     if (resultado > 0) {
-      return { texto: "Créditos maiores", fundo: "#e6f4ea", cor: "#1b5e20" };
+      return { texto: "Créditos maiores", fundo: "var(--fundo-ok)", cor: "var(--ok)" };
     }
     if (resultado < 0) {
-      return { texto: "Débitos maiores", fundo: "#fdecea", cor: "#b71c1c" };
+      return { texto: "Débitos maiores", fundo: "var(--fundo-erro)", cor: "var(--erro)" };
     }
-    return { texto: "Empate", fundo: "#eee", cor: "#444" };
+    return { texto: "Empate", fundo: "var(--fundo-neutro)", cor: "var(--texto-suave)" };
   };
 
   return (
@@ -167,7 +167,7 @@ export default function Relatorios() {
         ))}
       </div>
 
-      {erro && <p style={{ color: "crimson" }}>{erro}</p>}
+      {erro && <p style={{ color: "var(--erro)" }}>{erro}</p>}
 
       <h2>Créditos x débitos por mês</h2>
 
@@ -207,7 +207,7 @@ export default function Relatorios() {
             {[...serie].reverse().map((s) => {
               const sit = situacao(s.resultado);
               return (
-                <tr key={s.mes} style={{ borderTop: "1px solid #ccc" }}>
+                <tr key={s.mes} style={{ borderTop: "1px solid var(--borda)" }}>
                   <td>{s.rotulo}</td>
                   <td style={{ textAlign: "right" }}>{moeda(s.creditos)}</td>
                   <td style={{ textAlign: "right" }}>{moeda(s.debitos)}</td>

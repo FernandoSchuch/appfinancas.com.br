@@ -22,6 +22,11 @@ const TELAS = [
     titulo: "Relatórios",
     descricao: "Gráficos de créditos e débitos por mês",
   },
+  {
+    href: "/formatos",
+    titulo: "Formatos de importação",
+    descricao: "Define como ler o CSV de cada banco ou cartão",
+  },
 ];
 
 export default function Menu() {
@@ -45,7 +50,7 @@ export default function Menu() {
                 style={{
                   display: "block",
                   padding: 16,
-                  border: "1px solid #ccc",
+                  border: "1px solid var(--borda)",
                   borderRadius: 8,
                   textDecoration: "none",
                   color: "inherit",
@@ -53,7 +58,7 @@ export default function Menu() {
               >
                 <strong>{t.titulo}</strong>
                 <br />
-                <span style={{ fontSize: 14, color: "#555" }}>
+                <span style={{ fontSize: 14, color: "var(--texto-suave)" }}>
                   {t.descricao}
                 </span>
               </Link>

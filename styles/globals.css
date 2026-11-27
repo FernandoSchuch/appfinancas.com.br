@@ -1,0 +1,110 @@
+/* Tema escuro padrão. As cores das telas vêm destas variáveis. */
+:root {
+  color-scheme: dark;
+
+  --fundo: #121417;
+  --card: #1c2026;
+  --texto: #e6e8eb;
+  --texto-suave: #9aa4af;
+  --borda: #3a424c;
+  --link: #6cb6ff;
+
+  --ok: #5fd18a;
+  --erro: #ff7b72;
+  --alerta: #e3b341;
+
+  --fundo-ok: #17352a;
+  --fundo-erro: #3d1d1f;
+  --fundo-neutro: #2a2f36;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+a {
+  color: var(--link);
+}
+
+h1,
+h2,
+h3 {
+  color: var(--texto);
+}
+
+input,
+select,
+textarea,
+button {
+  background: var(--card);
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font: inherit;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--ok);
+  padding: 0;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--texto-suave);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--fundo-neutro);
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+table th {
+  color: var(--texto-suave);
+  font-weight: 600;
+}
+
+/* gráficos (recharts) */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--texto-suave);
+}
+
+.recharts-cartesian-grid line {
+  stroke: var(--borda);
+}
+
+.recharts-legend-item-text {
+  color: var(--texto) !important;
+}
+
+.recharts-default-tooltip {
+  background-color: var(--card) !important;
+  border-color: var(--borda) !important;
+}
