@@ -233,7 +233,7 @@ export default function Cadastros() {
       </div>
 
       {mensagem && (
-        <p style={{ color: mensagem.tipo === "ok" ? "var(--ok)" : "var(--erro)" }}>
+        <p style={{ color: mensagem.tipo === "ok" ? "green" : "crimson" }}>
           {mensagem.texto}
         </p>
       )}
@@ -282,7 +282,7 @@ export default function Cadastros() {
           {itens.map((item) => {
             const emEdicao = editando?.id === item.id;
             return (
-              <tr key={item.id} style={{ borderTop: "1px solid var(--borda)" }}>
+              <tr key={item.id} style={{ borderTop: "1px solid #ccc" }}>
                 <td>
                   {emEdicao ? (
                     <input
